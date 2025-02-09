@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
 from types import NoneType
 import numpy as np
-from pandas import DataFrame
+import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
@@ -9,7 +10,7 @@ from sklearn.metrics import mean_absolute_percentage_error
 from keras.api.models import Sequential, load_model, Model
 from keras.api.layers import Dense, LSTM, Dropout, Bidirectional
 
-def fetch_data(scaler: MinMaxScaler) -> tuple[DataFrame, np.ndarray]:
+def fetch_data(scaler: MinMaxScaler) -> tuple[pd.DataFrame, np.ndarray]:
     """Fetches data using the yfinance library.
 
     Args:
@@ -22,7 +23,8 @@ def fetch_data(scaler: MinMaxScaler) -> tuple[DataFrame, np.ndarray]:
         tuple[DataFrame, np.ndarray]: A tuple consisting of the original data as a pandas DataFrame
                                       and a np array of the scaled data.
     """
-    df = yf.download('AAPL', start='2015-01-01', end='2024-01-01')
+    today = datetime.today().strftime('%Y-%m-%d')
+    df = yf.download('AAPL', start='2015-01-01', end=today)
 
     if not isinstance(df, NoneType):
         closing_price_data = df[['Close']]
@@ -98,6 +100,11 @@ else:
 if isinstance(model, Model):
     # Make predictions
     predictions = model.predict(X_test)
+
+    # Make prediction for tomorrows closing price
+    last_sequence = scaled_data[-seq_length:].reshape(1, seq_length, 1)
+    predicted_tomorrow = model.predict(last_sequence)
+    predicted_tomorrow = scaler.inverse_transform(predicted_tomorrow).flatten()[0]
     
     # Quantify error
     mape = mean_absolute_percentage_error(y_test, predictions)
@@ -111,10 +118,19 @@ if isinstance(model, Model):
     plt.plot(df.index[train_size+seq_length:], df[['Close']][train_size+seq_length:], label='Actual Price')
     plt.plot(df.index[train_size+seq_length:], predictions, label='Predicted Price')
 
-      # Add MAPE to plot
-    print(f'\n{mape}')
+    # Add tomorrow's prediction
+    next_day = df.index[-1] + pd.Timedelta(days=1)
+    plt.plot(next_day, predicted_tomorrow, 'ro', label="Predicted Tomorrow")  
+
+    # Add todays and tomorrows price and MAPE to the plot
+    todays_price = df['Close'].iloc[-1].values[0]
+    text_str = (
+        f"Today's Closing Price: ${todays_price:.2f}\n"
+        f"Predicted Price for Tomorrow: ${predicted_tomorrow:.2f}\n"
+        f"MAPE: {mape:.2%}"
+    )
     plt.text(
-        0.05, 0.95, f'MAPE: {mape:.2%}', 
+        0.05, 0.95, text_str, 
         transform=plt.gca().transAxes, fontsize=12, 
         verticalalignment='top', bbox=dict(facecolor='white', alpha=0.8)
     )
